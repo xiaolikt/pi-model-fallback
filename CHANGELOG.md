@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Recognize CodeBuddy SDK failures that carry no HTTP status: `CodeBuddy returned an empty response twice` maps to `502`, and the CLI's `model backend unavailable` text maps to `503`, so fallback rules can fire for the CodeBuddy provider.
+- Map status-free rate-limit wording (`Rate limit exceeded`, `rate-limit reached`, a bare `Too Many Requests`) to `429`. An observed HTTP status still takes precedence.
+
 ## [0.6.2] - 2026-11-13
 
 ### Changed

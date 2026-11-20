@@ -232,3 +232,24 @@ test("parseStatusFromErrorMessage extracts further bare-status wordings", () => 
   assert.equal(parseStatusFromErrorMessage("429 daily quota exhausted"), 429);
   assert.equal(parseStatusFromErrorMessage("429 RATE_LIMIT_EXCEEDED"), 429);
 });
+
+test("parseStatusFromErrorMessage maps CodeBuddy SDK failure texts", () => {
+  assert.equal(
+    parseStatusFromErrorMessage("CodeBuddy returned an empty response twice (the session was rotated between attempts)."),
+    502,
+  );
+  assert.equal(parseStatusFromErrorMessage("model backend unavailable"), 503);
+  assert.equal(parseStatusFromErrorMessage("CodeBuddy query failed (error_during_execution).\nmodel backend unavailable"), 503);
+});
+
+test("parseStatusFromErrorMessage maps status-free rate-limit wording to 429", () => {
+  assert.equal(parseStatusFromErrorMessage("Rate limit exceeded, please retry later"), 429);
+  assert.equal(parseStatusFromErrorMessage("rate-limit reached for requests"), 429);
+  assert.equal(parseStatusFromErrorMessage("Too Many Requests"), 429);
+  assert.equal(
+    parseStatusFromErrorMessage("429 rate limit exceeded: CodeBuddy rejected the request (sustained), resets at 18:23"),
+    429,
+  );
+  // Mentioning rate limits without reporting the condition stays unmatched.
+  assert.equal(parseStatusFromErrorMessage("rate limits can be configured per workspace"), undefined);
+});

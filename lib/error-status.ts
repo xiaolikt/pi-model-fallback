@@ -26,8 +26,12 @@ export function parseReasonFromErrorMessage(message: string): string | undefined
 // - "<provider> stream ended without a terminal event" (SSE stream dies silently)
 // - "upstream stream closed before a terminal event" (router-relayed SSE death,
 //   e.g. CLIProxyAPI; the wording differs from the provider-level one above)
+// - "CodeBuddy returned an empty response twice" (CodeBuddy SDK provider; the
+//   CLI produced nothing usable on two rotated sessions and the failure carries
+//   no HTTP status, so it is synthesized like the other empty responses)
 const EMPTY_PROVIDER_RESPONSE_PATTERNS: RegExp[] = [
   /provider returned an empty response/i,
+  /codebuddy returned an empty response twice/i,
   /response (has|with) no body/i,
   /stream ended without a terminal event/i,
   /stream (?:was )?(?:ended|closed) before (?:a |the )?terminal (?:response )?event/i,
@@ -47,6 +51,17 @@ const EMPTY_PROVIDER_RESPONSE_PATTERNS: RegExp[] = [
 const SUBSCRIPTION_QUOTA_PATTERNS: RegExp[] = [
   /subscription[\s_-]sharing[\s_-][a-z_]*usage[\s_-]limit/i,
   /\byou(?:'ve| have) (?:hit|reached) your chatgpt (?:workspace'?s )?usage limit\b/i,
+];
+
+// Throttling failures that arrive without any HTTP status. Providers and SDK
+// transports that surface no numeric status still name the failure: "Rate limit
+// exceeded, please retry later" or a bare "Too Many Requests". Mapped to 429
+// (keeping an observed status when one exists) so status-based rules can fire.
+// Prose that merely mentions rate limits without reporting a failure stays
+// unmatched: the wording must report the condition (exceeded/reached/hit/rejected).
+const RATE_LIMIT_TEXT_PATTERNS: RegExp[] = [
+  /\brate[\s_-]?limit(?:ed)?\s+(?:exceeded|reached|hit|rejected)/i,
+  /\btoo many requests\b/i,
 ];
 
 export function parseStatusFromErrorMessage(message: string, observedStatus?: number): number | undefined {
@@ -118,6 +133,10 @@ export function parseStatusFromErrorMessage(message: string, observedStatus?: nu
     }
   }
 
+  for (const pattern of RATE_LIMIT_TEXT_PATTERNS) {
+    if (pattern.test(message)) return observedStatus ?? 429;
+  }
+
   for (const pattern of EMPTY_PROVIDER_RESPONSE_PATTERNS) {
     if (pattern.test(message)) {
       // Synthesize 502 so status-based fallback rules fire instead of the
@@ -128,6 +147,8 @@ export function parseStatusFromErrorMessage(message: string, observedStatus?: nu
     }
   }
 
+  // The CodeBuddy CLI reports an unusable backend without any HTTP status.
+  if (/\bmodel backend unavailable\b/i.test(message)) return 503;
   // Connection failures have no HTTP response; use the existing unavailable-service rules.
   if (/^\s*(?:error:\s*)?(?:connection error|request timed out|fetch failed|terminated)[.!]?\s*$/i.test(message) ||
       /^\s*(?:error:\s*)?request timed out\.\s+\S/i.test(message) ||
